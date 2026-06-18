@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Security, UploadFile, File
 from fastapi.security.api_key import APIKeyHeader
 import tempfile
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -77,6 +81,7 @@ async def verificar_api_key(api_key: str = Security(api_key_header)):
 
 @app.post("/api/v1/processar-nota")
 async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends(verificar_api_key)):
+    logger.info(f"==== Recebendo arquivo: {arquivo.filename} ====")
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=extensao) as tmp:
@@ -86,6 +91,7 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
 
     json_ia = None
     try:
+        logger.info(f"Iniciando chamada para a IA (Gemini) para o arquivo tipo {extensao}...")
         if extensao == ".xml":
             with open(caminho_arquivo, 'r', encoding='utf-8') as f:
                 conteudo_xml = f.read()
@@ -109,8 +115,10 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
             raise HTTPException(status_code=400, detail="Formato de arquivo não suportado")
 
         if not json_ia:
+            logger.error("A IA não retornou nenhum dado válido.")
             raise HTTPException(status_code=500, detail="IA não retornou dados úteis")
 
+        logger.info("Resposta do Gemini recebida com sucesso. Processando o JSON gerado...")
         json_limpo = json_ia.replace('```json', '').replace('```', '').strip()
         dados_nota = json.loads(json_limpo)
         lista_notas = dados_nota if isinstance(dados_nota, list) else [dados_nota]
@@ -148,6 +156,7 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
             # Garantir que retorna os labels configurados no ServiceNow
             url_envio = url_snow if "?sysparm_display_value=true" in url_snow else url_snow + "?sysparm_display_value=true"
             
+            logger.info(f"Enviando dados do fornecedor '{nota.get('u_fornecedor', 'Desconhecido')}' para o ServiceNow...")
             resposta = requests.post(
                 url_envio,
                 auth=(usuario_snow, senha_snow),
@@ -156,10 +165,13 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
             )
             
             if resposta.status_code == 201:
+                logger.info("Registro inserido com sucesso no ServiceNow (HTTP 201)!")
                 resultados.append({"nota": nota, "status": "criado", "snow_response": resposta.json()})
             else:
+                logger.error(f"Falha ao enviar para o ServiceNow (HTTP {resposta.status_code}): {resposta.text}")
                 resultados.append({"nota": nota, "status": "erro", "detalhe": resposta.text})
                 
+        logger.info(f"==== Processamento do arquivo {arquivo.filename} 100% finalizado ====")
         return {"status": "sucesso", "arquivo": arquivo.filename, "resultados": resultados}
 
     except Exception as e:
