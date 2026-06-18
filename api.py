@@ -118,13 +118,38 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
         resultados = []
         for nota in lista_notas:
             confianca = int(nota.get("u_nivel_de_confianca_da_ia", 0))
-            if confianca >= 80:
-                nota["u_status_da_classificacao"] = "Classificação Automática"
+            
+            valor_raw = str(nota.get("u_valor", "")).strip()
+            cnpj_raw = str(nota.get("u_cnpj_fornecedor", nota.get("u_cnpj_do_fornecedor", ""))).strip()
+            
+            # Regra de Validação de Dados
+            if confianca >= 80 and valor_raw and cnpj_raw:
+                nota["u_status_da_classificacao"] = "Sucesso na Extração"
             else:
-                nota["u_status_da_classificacao"] = "Revisão Manual"
+                nota["u_status_da_classificacao"] = "Pendente Revisão Financeira"
+            
+            # Regra de Alçada Financeira
+            try:
+                valor_limpo = valor_raw.replace("R$", "").replace(" ", "").replace(",", ".")
+                valor_float = float(valor_limpo)
+                
+                if valor_float < 2000.00:
+                    nota["u_status_da_aprovacao"] = "Aprovação Automática"
+                elif 2000.00 <= valor_float <= 10000.00:
+                    nota["u_status_da_aprovacao"] = "Aprovação da Gerência"
+                else:
+                    nota["u_status_da_aprovacao"] = "Aprovação da Diretoria"
+            except ValueError:
+                nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Erro de Valor)"
+            
+            # Regra de Workflow
+            nota["u_status_do_pagamento"] = "Aberto"
+            
+            # Garantir que retorna os labels configurados no ServiceNow
+            url_envio = url_snow if "?sysparm_display_value=true" in url_snow else url_snow + "?sysparm_display_value=true"
             
             resposta = requests.post(
-                url_snow,
+                url_envio,
                 auth=(usuario_snow, senha_snow),
                 json=nota,
                 headers={"Accept": "application/json"}
