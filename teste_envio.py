@@ -8,7 +8,6 @@ url_snow = os.getenv("SERVICENOW_URL") + "?sysparm_display_value=true"
 usuario_snow = os.getenv("SERVICENOW_USER")
 senha_snow = os.getenv("SERVICENOW_PASSWORD")
 
-# Dummy data that mimics what we get from Gemini + the new rules
 nota = {
     "u_fornecedor": "Samsung Brasil",
     "u_cnpj_do_fornecedor": "11222333000144",

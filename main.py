@@ -115,13 +115,11 @@ if __name__ == "__main__":
                 valor_raw = str(nota.get("u_valor", "")).strip()
                 cnpj_raw = str(nota.get("u_cnpj_fornecedor", nota.get("u_cnpj_do_fornecedor", ""))).strip()
                 
-                # Regra de Validação de Dados
                 if confianca >= 80 and valor_raw and cnpj_raw:
                     nota["u_status_da_classificacao"] = "Sucesso na Extração"
                 else:
                     nota["u_status_da_classificacao"] = "Pendente Revisão Financeira"
                 
-                # Regra de Alçada Financeira
                 try:
                     valor_limpo = valor_raw.replace("R$", "").replace(" ", "").replace(",", ".")
                     valor_float = float(valor_limpo)
@@ -135,7 +133,6 @@ if __name__ == "__main__":
                 except ValueError:
                     nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Erro de Valor)"
                 
-                # Regra de Workflow
                 nota["u_status_do_pagamento"] = "Aberto"
                 
                 resposta = requests.post(

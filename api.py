@@ -83,7 +83,6 @@ def enviar_comentario_snow(tabela: str, sys_id: str, mensagem: str):
     if not tabela or not sys_id:
         return
     
-    # Extrai a base_url (ex: https://instancia.service-now.com) da url_snow atual
     base_url = url_snow.split('/api/now/table/')[0]
     url_patch = f"{base_url}/api/now/table/{tabela}/{sys_id}"
     
@@ -105,7 +104,7 @@ async def processar_nota(
     record_table: str = Form(None),
     api_key: str = Depends(verificar_api_key)
 ):
-    logger.info(f"==== Recebendo arquivo: {arquivo.filename} ====")
+    logger.info(f"Recebendo arquivo: {arquivo.filename}")
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=extensao) as tmp:
@@ -158,13 +157,11 @@ async def processar_nota(
             valor_raw = str(nota.get("u_valor", "")).strip()
             cnpj_raw = str(nota.get("u_cnpj_fornecedor", nota.get("u_cnpj_do_fornecedor", ""))).strip()
             
-            # Regra de Validação de Dados
             if confianca >= 80 and valor_raw and cnpj_raw:
                 nota["u_status_da_classificacao"] = "Sucesso na Extração"
             else:
                 nota["u_status_da_classificacao"] = "Pendente Revisão Financeira"
             
-            # Regra de Alçada Financeira
             try:
                 valor_limpo = valor_raw.replace("R$", "").replace(" ", "").replace(",", ".")
                 valor_float = float(valor_limpo)
@@ -178,14 +175,11 @@ async def processar_nota(
             except ValueError:
                 nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Erro de Valor)"
             
-            # Segurança: se a classificação exige revisão humana, bloqueia qualquer aprovação automática
             if nota["u_status_da_classificacao"] == "Pendente Revisão Financeira":
                 nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Pendente Revisão)"
             
-            # Regra de Workflow
             nota["u_status_do_pagamento"] = "Aberto"
             
-            # Garantir que retorna os labels configurados no ServiceNow
             url_envio = url_snow if "?sysparm_display_value=true" in url_snow else url_snow + "?sysparm_display_value=true"
             
             logger.info(f"Enviando dados do fornecedor '{nota.get('u_fornecedor', 'Desconhecido')}' para o ServiceNow...")
@@ -203,7 +197,7 @@ async def processar_nota(
                 logger.error(f"Falha ao enviar para o ServiceNow (HTTP {resposta.status_code}): {resposta.text}")
                 resultados.append({"nota": nota, "status": "erro", "detalhe": resposta.text})
                 
-        logger.info(f"==== Processamento do arquivo {arquivo.filename} 100% finalizado ====")
+        logger.info(f"Processamento do arquivo {arquivo.filename} 100% finalizado")
         return {"status": "sucesso", "arquivo": arquivo.filename, "resultados": resultados}
 
     except Exception as e:
