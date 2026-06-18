@@ -178,6 +178,10 @@ async def processar_nota(
             except ValueError:
                 nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Erro de Valor)"
             
+            # Segurança: se a classificação exige revisão humana, bloqueia qualquer aprovação automática
+            if nota["u_status_da_classificacao"] == "Pendente Revisão Financeira":
+                nota["u_status_da_aprovacao"] = "Aprovação Bloqueada (Pendente Revisão)"
+            
             # Regra de Workflow
             nota["u_status_do_pagamento"] = "Aberto"
             
