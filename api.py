@@ -6,7 +6,7 @@ import PyPDF2
 from PIL import Image
 from google import genai
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException, Security, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Security, UploadFile, File, Form
 from fastapi.security.api_key import APIKeyHeader
 import tempfile
 import logging
@@ -79,8 +79,32 @@ async def verificar_api_key(api_key: str = Security(api_key_header)):
         raise HTTPException(status_code=403, detail="Acesso não autorizado")
     return api_key
 
+def enviar_comentario_snow(tabela: str, sys_id: str, mensagem: str):
+    if not tabela or not sys_id:
+        return
+    
+    # Extrai a base_url (ex: https://instancia.service-now.com) da url_snow atual
+    base_url = url_snow.split('/api/now/table/')[0]
+    url_patch = f"{base_url}/api/now/table/{tabela}/{sys_id}"
+    
+    logger.info(f"Enviando notificação de erro para ServiceNow no registro {tabela}/{sys_id}")
+    try:
+        requests.patch(
+            url_patch,
+            auth=(usuario_snow, senha_snow),
+            json={"work_notes": mensagem},
+            headers={"Accept": "application/json", "Content-Type": "application/json"}
+        )
+    except Exception as ex:
+        logger.error(f"Falha ao enviar comentário de erro: {ex}")
+
 @app.post("/api/v1/processar-nota")
-async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends(verificar_api_key)):
+async def processar_nota(
+    arquivo: UploadFile = File(...), 
+    record_sys_id: str = Form(None),
+    record_table: str = Form(None),
+    api_key: str = Depends(verificar_api_key)
+):
     logger.info(f"==== Recebendo arquivo: {arquivo.filename} ====")
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     
@@ -112,10 +136,14 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
             json_ia = extrair_dados_imagem(caminho_arquivo)
             
         else:
-            raise HTTPException(status_code=400, detail="Formato de arquivo não suportado")
+            erro_msg = f"Formato de arquivo não suportado: {extensao}"
+            logger.error(erro_msg)
+            enviar_comentario_snow(record_table, record_sys_id, f"A Inteligência Artificial recusou o anexo: {erro_msg}. Por favor, envie PDF, JPG, PNG ou XML.")
+            raise HTTPException(status_code=400, detail=erro_msg)
 
         if not json_ia:
             logger.error("A IA não retornou nenhum dado válido.")
+            enviar_comentario_snow(record_table, record_sys_id, "A Inteligência Artificial não conseguiu ler o conteúdo desta nota fiscal. Pode estar ilegível.")
             raise HTTPException(status_code=500, detail="IA não retornou dados úteis")
 
         logger.info("Resposta do Gemini recebida com sucesso. Processando o JSON gerado...")
@@ -175,6 +203,8 @@ async def processar_nota(arquivo: UploadFile = File(...), api_key: str = Depends
         return {"status": "sucesso", "arquivo": arquivo.filename, "resultados": resultados}
 
     except Exception as e:
+        logger.error(f"Erro interno no servidor: {str(e)}")
+        enviar_comentario_snow(record_table, record_sys_id, f"A API da Inteligência Artificial encontrou um erro interno: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if os.path.exists(caminho_arquivo):
